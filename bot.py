@@ -27,17 +27,19 @@ URL_A_MONITOREAR = 'https://app.warera.io/site.webmanifest'
 CABECERAS = {'User-Agent': 'Mozilla/5.0'}
 tz_venezuela = pytz.timezone('America/Caracas')
 
-# --- CLASE DEL BOT CON SOPORTE PARA SLASH ---
+# --- CLASE DEL BOT ---
 class MyBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
+        intents.message_content = True
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        # Esto registra los comandos "/" en Discord
+        # Sincroniza los comandos / con Discord
         await self.tree.sync()
         print("Comandos sincronizados.")
-        reporte_por_hora.start()
+        if not reporte_por_hora.is_running():
+            reporte_por_hora.start()
 
 bot = MyBot()
 
@@ -48,6 +50,7 @@ async def revisar_servidor():
                 return response.status == 200
     except: return False
 
+# --- PANEL CON AMBOS BOTONES ---
 class PanelBotones(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -65,8 +68,19 @@ class PanelBotones(discord.ui.View):
         embed.set_footer(text=f"Última actualización: {hora} • Activo")
         await interaction.edit_original_response(embed=embed, view=None)
 
+    @discord.ui.button(label="NO", style=discord.ButtonStyle.danger, custom_id="btn_no")
+    async def boton_no(self, interaction: discord.Interaction, button: discord.ui.Button):
+        hora = datetime.now(tz_venezuela).strftime("%I:%M %p")
+        embed = discord.Embed(
+            title="🛑 Revisión Cancelada",
+            description="**Decidiste no revisar esta vez.**\n¡A seguir farmeando!",
+            color=discord.Color.orange()
+        )
+        embed.set_footer(text=f"Última actualización: {hora} • Activo")
+        await interaction.response.edit_message(embed=embed, view=None)
+
 # --- COMANDO SLASH /STATUS ---
-@bot.tree.command(name="status", description="Muestra el panel de control para revisar el servidor de War Era")
+@bot.tree.command(name="status", description="Muestra el panel para revisar el servidor de War Era")
 async def status(interaction: discord.Interaction):
     hora = datetime.now(tz_venezuela).strftime("%I:%M %p")
     embed = discord.Embed(
@@ -93,8 +107,9 @@ async def reporte_por_hora():
 
 @bot.event
 async def on_ready():
-    print(f'Bot {bot.user} operando en la nube')
+    print(f'Bot {bot.user} operando en la nube con Slash Commands')
 
 mantener_vivo()
 bot.run(TOKEN)
+
 
