@@ -55,7 +55,7 @@ class PanelBotones(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="SÍ (Revisar)", style=discord.ButtonStyle.success, custom_id="btn_si")
+    @discord.ui.button(label="SÍ", style=discord.ButtonStyle.success, custom_id="btn_si")
     async def boton_si(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         estado = await revisar_servidor()
@@ -111,5 +111,6 @@ async def on_ready():
 
 mantener_vivo()
 bot.run(TOKEN)
+
 
 
