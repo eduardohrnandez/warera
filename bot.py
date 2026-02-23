@@ -23,7 +23,7 @@ def mantener_vivo():
     t.start()
 
 # --- CONFIGURACIÓN ---
-TOKEN = os.environ.get(DISCORD_TOKEN)
+TOKEN = os.environ.get('DISCORD_TOKEN')
 CANAL_ID = 1369374657563721780
 URL_A_MONITOREAR = 'https://app.warera.io/site.webmanifest'
 CABECERAS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/121.0.0.0 Safari/537.36'}
@@ -120,4 +120,5 @@ async def reporte_por_hora():
 
 # --- ENCENDIDO ---
 mantener_vivo() # Arrancamos el servidor web falso
+
 bot.run(TOKEN)  # Arrancamos el bot real
