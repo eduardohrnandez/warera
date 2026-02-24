@@ -7,6 +7,7 @@ import pytz
 from flask import Flask
 from threading import Thread
 import os
+import time  # <-- Añadimos la librería de tiempo
 
 # --- SERVIDOR WEB ---
 app = Flask('')
@@ -27,7 +28,6 @@ URL_A_MONITOREAR = 'https://app.warera.io/site.webmanifest'
 CABECERAS = {'User-Agent': 'Mozilla/5.0'}
 tz_venezuela = pytz.timezone('America/Caracas')
 
-# --- CLASE DEL BOT ---
 class MyBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -35,7 +35,6 @@ class MyBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        # Sincroniza los comandos / con Discord
         await self.tree.sync()
         print("Comandos sincronizados.")
         if not reporte_por_hora.is_running():
@@ -43,29 +42,60 @@ class MyBot(commands.Bot):
 
 bot = MyBot()
 
+# --- NUEVO REVISOR CON CRONÓMETRO ---
 async def revisar_servidor():
+    inicio = time.time() # Empezamos a contar
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(URL_A_MONITOREAR, headers=CABECERAS, timeout=10) as response:
-                return response.status == 200
-    except: return False
+            # Le bajamos el timeout a 5 segundos. Si tarda más de 5s, consideramos que está caído o injugable.
+            async with session.get(URL_A_MONITOREAR, headers=CABECERAS, timeout=5) as response:
+                fin = time.time() # Terminamos de contar
+                ping_ms = int((fin - inicio) * 1000) # Lo pasamos a milisegundos
+                
+                if response.status == 200:
+                    return {"estado": "online", "ping": ping_ms}
+                else:
+                    return {"estado": "caido", "ping": 0}
+    except: 
+        return {"estado": "caido", "ping": 0}
+
+# --- GENERADOR DE RESPUESTAS (Para no repetir código) ---
+def generar_embed_estado(resultado):
+    hora = datetime.now(tz_venezuela).strftime("%I:%M %p")
+    
+    if resultado["estado"] == "online":
+        if resultado["ping"] < 800: # Si responde en menos de 0.8 segundos
+            embed = discord.Embed(
+                title="🔎 Resultado de la Revisión",
+                description=f"**¡El servidor está ONLINE y estable! ✅**\n⚡ Velocidad de respuesta: `{resultado['ping']} ms`",
+                color=discord.Color.green()
+            )
+        else: # Si tarda mucho
+            embed = discord.Embed(
+                title="⚠️ Servidor Lento / Pegado",
+                description=f"**El servidor responde, pero está sufriendo lag 🟡**\n🐌 Velocidad de respuesta: `{resultado['ping']} ms` (Muy alto)",
+                color=discord.Color.orange()
+            )
+    else: # Si da error o timeout
+        embed = discord.Embed(
+            title="🛑 Servidor Caído",
+            description="**El servidor de War Era no responde o está CAÍDO ❌**",
+            color=discord.Color.red()
+        )
+        
+    embed.set_footer(text=f"Última actualización: {hora} • Activo")
+    return embed
 
 # --- PANEL CON AMBOS BOTONES ---
 class PanelBotones(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="SÍ", style=discord.ButtonStyle.success, custom_id="btn_si")
+    @discord.ui.button(label="SÍ (Revisar)", style=discord.ButtonStyle.success, custom_id="btn_si")
     async def boton_si(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        estado = await revisar_servidor()
-        hora = datetime.now(tz_venezuela).strftime("%I:%M %p")
-        embed = discord.Embed(
-            title="🔎 Resultado de la Revisión",
-            description="**¡El servidor de War Era está ONLINE! ✅**" if estado else "**El servidor de War Era está CAÍDO ❌**",
-            color=discord.Color.green() if estado else discord.Color.red()
-        )
-        embed.set_footer(text=f"Última actualización: {hora} • Activo")
+        resultado = await revisar_servidor()
+        embed = generar_embed_estado(resultado)
         await interaction.edit_original_response(embed=embed, view=None)
 
     @discord.ui.button(label="NO", style=discord.ButtonStyle.danger, custom_id="btn_no")
@@ -74,13 +104,13 @@ class PanelBotones(discord.ui.View):
         embed = discord.Embed(
             title="🛑 Revisión Cancelada",
             description="**Decidiste no revisar esta vez.**\n¡A seguir farmeando!",
-            color=discord.Color.orange()
+            color=discord.Color.red()
         )
         embed.set_footer(text=f"Última actualización: {hora} • Activo")
         await interaction.response.edit_message(embed=embed, view=None)
 
 # --- COMANDO SLASH /STATUS ---
-@bot.tree.command(name="status", description="Muestra el panel para revisar el servidor de War Era")
+@bot.tree.command(name="status", description="Muestra el panel de control para revisar el servidor de War Era")
 async def status(interaction: discord.Interaction):
     hora = datetime.now(tz_venezuela).strftime("%I:%M %p")
     embed = discord.Embed(
@@ -95,22 +125,15 @@ async def status(interaction: discord.Interaction):
 async def reporte_por_hora():
     canal = bot.get_channel(CANAL_ID)
     if canal:
-        estado = await revisar_servidor()
-        hora = datetime.now(tz_venezuela).strftime("%I:%M %p")
-        embed = discord.Embed(
-            title="⏱️ Reporte Automático de la Hora",
-            description="**✅ WAR ERA ESTÁ ONLINE ✅**" if estado else "**❌ WAR ERA ESTÁ CAÍDO ❌**",
-            color=discord.Color.green() if estado else discord.Color.red()
-        )
-        embed.set_footer(text=f"Última actualización: {hora} • Activo")
+        resultado = await revisar_servidor()
+        embed = generar_embed_estado(resultado)
+        # Cambiamos el título para que se sepa que es el automático
+        embed.title = "⏱️ Reporte Automático de la Hora" 
         await canal.send(embed=embed)
 
 @bot.event
 async def on_ready():
-    print(f'Bot {bot.user} operando en la nube con Slash Commands')
+    print(f'Bot {bot.user} operando en la nube con medidor de Ping')
 
 mantener_vivo()
 bot.run(TOKEN)
-
-
-
