@@ -7,12 +7,12 @@ import pytz
 from flask import Flask
 from threading import Thread
 import os
-import time  # <-- Añadimos la librería de tiempo
+import time
 
-# --- SERVIDOR WEB ---
+# --- SERVIDOR WEB (Para que Render no lo apague) ---
 app = Flask('')
 @app.route('/')
-def home(): return "Bot Online"
+def home(): return "Bot Status Online"
 
 def run_server():
     port = int(os.environ.get("PORT", 8080))
@@ -21,13 +21,15 @@ def run_server():
 def mantener_vivo():
     Thread(target=run_server).start()
 
-# --- CONFIGURACIÓN ---
+# --- CONFIGURACIÓN PRINCIPAL ---
 TOKEN = os.environ.get('DISCORD_TOKEN')
 CANAL_ID = 1369374657563721780
-URL_A_MONITOREAR = 'https://app.warera.io/site.webmanifest'
-CABECERAS = {'User-Agent': 'Mozilla/5.0'}
+# ¡Aquí está el nuevo enlace directo al motor del juego!
+URL_A_MONITOREAR = 'https://api3.warera.io/trpc/map.getMapData'
+CABECERAS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
 tz_venezuela = pytz.timezone('America/Caracas')
 
+# --- CLASE DEL BOT ---
 class MyBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -36,47 +38,49 @@ class MyBot(commands.Bot):
 
     async def setup_hook(self):
         await self.tree.sync()
-        print("Comandos sincronizados.")
+        print("Comandos / sincronizados.")
         if not reporte_por_hora.is_running():
             reporte_por_hora.start()
 
 bot = MyBot()
 
-# --- NUEVO REVISOR CON CRONÓMETRO ---
+# --- FUNCIÓN DE REVISIÓN CON CRONÓMETRO ---
 async def revisar_servidor():
-    inicio = time.time() # Empezamos a contar
+    inicio = time.time() # Empezamos a contar los milisegundos
     try:
         async with aiohttp.ClientSession() as session:
-            # Le bajamos el timeout a 5 segundos. Si tarda más de 5s, consideramos que está caído o injugable.
+            # Le damos máximo 5 segundos para responder. Si tarda más, está colapsado.
             async with session.get(URL_A_MONITOREAR, headers=CABECERAS, timeout=5) as response:
-                fin = time.time() # Terminamos de contar
-                ping_ms = int((fin - inicio) * 1000) # Lo pasamos a milisegundos
+                fin = time.time() 
+                ping_ms = int((fin - inicio) * 1000) 
                 
-                if response.status == 200:
+                # Si responde con un código menor a 500, el motor está vivo y procesando.
+                if response.status < 500:
                     return {"estado": "online", "ping": ping_ms}
                 else:
-                    return {"estado": "caido", "ping": 0}
+                    return {"estado": "caido", "ping": ping_ms}
     except: 
+        # Si la conexión falla por completo o da Timeout
         return {"estado": "caido", "ping": 0}
 
-# --- GENERADOR DE RESPUESTAS (Para no repetir código) ---
+# --- GENERADOR DE RESPUESTAS VISUALES ---
 def generar_embed_estado(resultado):
     hora = datetime.now(tz_venezuela).strftime("%I:%M %p")
     
     if resultado["estado"] == "online":
-        if resultado["ping"] < 800: # Si responde en menos de 0.8 segundos
+        if resultado["ping"] < 800: # Rápido (Menos de 0.8s)
             embed = discord.Embed(
                 title="🔎 Resultado de la Revisión",
                 description=f"**¡El servidor está ONLINE y estable! ✅**\n⚡ Velocidad de respuesta: `{resultado['ping']} ms`",
                 color=discord.Color.green()
             )
-        else: # Si tarda mucho
+        else: # Lento / Pegado (Más de 0.8s)
             embed = discord.Embed(
                 title="⚠️ Servidor Lento / Pegado",
                 description=f"**El servidor responde, pero está sufriendo lag 🟡**\n🐌 Velocidad de respuesta: `{resultado['ping']} ms` (Muy alto)",
                 color=discord.Color.orange()
             )
-    else: # Si da error o timeout
+    else: # Caído o colapsado
         embed = discord.Embed(
             title="🛑 Servidor Caído",
             description="**El servidor de War Era no responde o está CAÍDO ❌**",
@@ -86,7 +90,7 @@ def generar_embed_estado(resultado):
     embed.set_footer(text=f"Última actualización: {hora} • Activo")
     return embed
 
-# --- PANEL CON AMBOS BOTONES ---
+# --- PANEL DE BOTONES INTERACTIVOS ---
 class PanelBotones(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -121,19 +125,19 @@ async def status(interaction: discord.Interaction):
     embed.set_footer(text=f"Última actualización: {hora} • Activo")
     await interaction.response.send_message(embed=embed, view=PanelBotones())
 
+# --- REPORTE AUTOMÁTICO ---
 @tasks.loop(hours=1)
 async def reporte_por_hora():
     canal = bot.get_channel(CANAL_ID)
     if canal:
         resultado = await revisar_servidor()
         embed = generar_embed_estado(resultado)
-        # Cambiamos el título para que se sepa que es el automático
         embed.title = "⏱️ Reporte Automático de la Hora" 
         await canal.send(embed=embed)
 
 @bot.event
 async def on_ready():
-    print(f'Bot {bot.user} operando en la nube con medidor de Ping')
+    print(f'Bot {bot.user} operando en la nube con medidor de Ping y API directa')
 
 mantener_vivo()
 bot.run(TOKEN)
