@@ -59,36 +59,32 @@ async def revisar_servidor():
     except: 
         return {"estado": "caido", "ping": 0}
 
-# --- NUEVO RADAR DE LAG (Más estricto) ---
+# --- NUEVO RADAR DE LAG (Calibrado) ---
 def generar_embed_estado(resultado):
     hora = datetime.now(tz_venezuela).strftime("%I:%M %p")
     
     if resultado["estado"] == "online":
         ping = resultado["ping"]
         
-        if ping < 250: 
-            # 🟢 Va volando
+        if ping < 1000: 
             embed = discord.Embed(
                 title="🔎 Resultado de la Revisión",
                 description=f"**¡El servidor está ONLINE y estable! ✅**\n⚡ Velocidad de respuesta: `{ping} ms`",
                 color=discord.Color.green()
             )
-        elif ping < 500: 
-            # 🟡 Se siente un poco el lag
+        elif ping < 2000: 
             embed = discord.Embed(
                 title="⚠️ Servidor Inestable",
                 description=f"**El servidor responde, pero con algo de lag 🟡**\n🐢 Velocidad de respuesta: `{ping} ms` (Inestable)",
                 color=discord.Color.yellow()
             )
         else: 
-            # 🟠 Supera los 500ms (Pegado)
             embed = discord.Embed(
                 title="⚠️ Servidor Lento / Pegado",
                 description=f"**El servidor responde, pero está sufriendo MUCHO lag 🟠**\n🐌 Velocidad de respuesta: `{ping} ms` (Injugable)",
                 color=discord.Color.orange()
             )
     else: 
-        # 🔴 Se cayó
         embed = discord.Embed(
             title="🛑 Servidor Caído",
             description="**El motor de War Era no responde o está CAÍDO ❌**",
@@ -133,19 +129,27 @@ async def status(interaction: discord.Interaction):
     embed.set_footer(text=f"Última actualización: {hora} • Activo")
     await interaction.response.send_message(embed=embed, view=PanelBotones())
 
-# --- REPORTE AUTOMÁTICO ---
+# --- REPORTE AUTOMÁTICO (AHORA INMORTAL) ---
 @tasks.loop(hours=1)
 async def reporte_por_hora():
-    canal = bot.get_channel(CANAL_ID)
-    if canal:
-        resultado = await revisar_servidor()
-        embed = generar_embed_estado(resultado)
-        embed.title = "⏱️ Reporte Automático de la Hora" 
-        await canal.send(embed=embed)
+    try: # El escudo anti-crasheo
+        canal = bot.get_channel(CANAL_ID)
+        if canal:
+            resultado = await revisar_servidor()
+            embed = generar_embed_estado(resultado)
+            embed.title = "⏱️ Reporte Automático de la Hora" 
+            await canal.send(embed=embed)
+    except Exception as e:
+        print(f"Error detectado y bloqueado en el reporte automático: {e}")
+
+@reporte_por_hora.before_loop
+async def esperar_conexion():
+    # Obligamos al bot a esperar a estar 100% online antes de empezar a contar la hora
+    await bot.wait_until_ready() 
 
 @bot.event
 async def on_ready():
-    print(f'Bot {bot.user} operando con radar de lag estricto.')
+    print(f'Bot {bot.user} operando. Loop automático protegido.')
 
 mantener_vivo()
 bot.run(TOKEN)
