@@ -9,7 +9,7 @@ from threading import Thread
 import os
 import time
 
-# --- SERVIDOR WEB (Para que Render no lo apague) ---
+# --- SERVIDOR WEB ---
 app = Flask('')
 @app.route('/')
 def home(): return "Bot Status Online"
@@ -24,7 +24,6 @@ def mantener_vivo():
 # --- CONFIGURACIÓN PRINCIPAL ---
 TOKEN = os.environ.get('DISCORD_TOKEN')
 CANAL_ID = 1369374657563721780
-# ¡Aquí está el nuevo enlace directo al motor del juego!
 URL_A_MONITOREAR = 'https://api3.warera.io/trpc/map.getMapData'
 CABECERAS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
 tz_venezuela = pytz.timezone('America/Caracas')
@@ -46,44 +45,53 @@ bot = MyBot()
 
 # --- FUNCIÓN DE REVISIÓN CON CRONÓMETRO ---
 async def revisar_servidor():
-    inicio = time.time() # Empezamos a contar los milisegundos
+    inicio = time.time() 
     try:
         async with aiohttp.ClientSession() as session:
-            # Le damos máximo 5 segundos para responder. Si tarda más, está colapsado.
             async with session.get(URL_A_MONITOREAR, headers=CABECERAS, timeout=5) as response:
                 fin = time.time() 
                 ping_ms = int((fin - inicio) * 1000) 
                 
-                # Si responde con un código menor a 500, el motor está vivo y procesando.
                 if response.status < 500:
                     return {"estado": "online", "ping": ping_ms}
                 else:
                     return {"estado": "caido", "ping": ping_ms}
     except: 
-        # Si la conexión falla por completo o da Timeout
         return {"estado": "caido", "ping": 0}
 
-# --- GENERADOR DE RESPUESTAS VISUALES ---
+# --- NUEVO RADAR DE LAG (Más estricto) ---
 def generar_embed_estado(resultado):
     hora = datetime.now(tz_venezuela).strftime("%I:%M %p")
     
     if resultado["estado"] == "online":
-        if resultado["ping"] < 800: # Rápido (Menos de 0.8s)
+        ping = resultado["ping"]
+        
+        if ping < 250: 
+            # 🟢 Va volando
             embed = discord.Embed(
                 title="🔎 Resultado de la Revisión",
-                description=f"**¡El servidor está ONLINE y estable! ✅**\n⚡ Velocidad de respuesta: `{resultado['ping']} ms`",
+                description=f"**¡El servidor está ONLINE y estable! ✅**\n⚡ Velocidad de respuesta: `{ping} ms`",
                 color=discord.Color.green()
             )
-        else: # Lento / Pegado (Más de 0.8s)
+        elif ping < 500: 
+            # 🟡 Se siente un poco el lag
+            embed = discord.Embed(
+                title="⚠️ Servidor Inestable",
+                description=f"**El servidor responde, pero con algo de lag 🟡**\n🐢 Velocidad de respuesta: `{ping} ms` (Inestable)",
+                color=discord.Color.yellow()
+            )
+        else: 
+            # 🟠 Supera los 500ms (Pegado)
             embed = discord.Embed(
                 title="⚠️ Servidor Lento / Pegado",
-                description=f"**El servidor responde, pero está sufriendo lag 🟡**\n🐌 Velocidad de respuesta: `{resultado['ping']} ms` (Muy alto)",
+                description=f"**El servidor responde, pero está sufriendo MUCHO lag 🟠**\n🐌 Velocidad de respuesta: `{ping} ms` (Injugable)",
                 color=discord.Color.orange()
             )
-    else: # Caído o colapsado
+    else: 
+        # 🔴 Se cayó
         embed = discord.Embed(
             title="🛑 Servidor Caído",
-            description="**El servidor de War Era no responde o está CAÍDO ❌**",
+            description="**El motor de War Era no responde o está CAÍDO ❌**",
             color=discord.Color.red()
         )
         
@@ -137,7 +145,7 @@ async def reporte_por_hora():
 
 @bot.event
 async def on_ready():
-    print(f'Bot {bot.user} operando en la nube con medidor de Ping y API directa')
+    print(f'Bot {bot.user} operando con radar de lag estricto.')
 
 mantener_vivo()
 bot.run(TOKEN)
